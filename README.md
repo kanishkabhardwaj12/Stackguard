@@ -134,12 +134,3 @@ Successfully sent alert for AWSKey to Email (Mailtrap).
 
 Scan complete.
 ```
-
-Example Slack Alert
-
-
-Example Email Alert (Mailtrap)
-
-(Add your screenshot here)
-
-[IMAGE_OF_YOUR_MAILTRAP_INBOX.png]
