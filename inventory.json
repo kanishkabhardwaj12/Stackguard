@@ -1,0 +1,17 @@
+[
+    {
+      "type": "AWSKey",
+      "value": "AKIAIOSFODNN7EXAMPLE",
+      "owner": "backend-team"
+    },
+    {
+      "type": "GitHubToken",
+      "value": "4q2w0e2r0t1y4u0i0op",
+      "owner": "dev-user-1"
+    },
+    {
+      "type": "AzureSecret",
+      "value": "abc_def_gehe-wow",
+      "owner": "analytics-service"
+    }
+  ]

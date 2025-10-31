@@ -1,0 +1,10 @@
+this is a sample file for the assignment. It mimics security leaks.
+
+Currently demonstrating "Leakage Detection"
+    Search for any matching token from your inventory in simulated public data sources.
+
+config.api_key = "4q2w0e2r0t1y4u0i0op"
+
+    You can use local sample files or the GitHub API to mimic public repo scanning.
+    For each match, collect: token type, source URL/path, snippet, and confidence score.
+
