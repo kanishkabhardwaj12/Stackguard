@@ -1,10 +1,8 @@
-StackGuard - Public Leakage Detection System
+# StackGuard - Public Leakage Detection System
 
 StackGuard is a Go-based scanner that detects sensitive tokens in public data sources. It scans a local file and public GitHub repositories, enriches the findings with basic geolocation, and sends immediate alerts via Slack and email.
 
-This project fulfills the requirements of the "Public Leakage Detection System" assignment.
-
-Features
+## Features
 
 Token Inventory: Scans against a JSON-based token inventory (inventory.json).
 
@@ -16,7 +14,7 @@ Multi-Channel Alerting: Sends alerts to both a Slack webhook and an email addres
 
 Containerized: Includes a Dockerfile and .dockerignore for a complete, reproducible, and secure build.
 
-How It Works
+## How It Works
 
 Load Inventory: Reads the list of tokens to hunt for from inventory.json.
 
@@ -28,17 +26,21 @@ Public Scan: Uses the GitHub Code Search API to find any matching tokens in publ
 
 Alert: For every leak found, the handleAlerts function formats and sends a message to Slack and Mailtrap.
 
-🚀 How to Run
+## How to Run
 
 Configuration (Required)
 
 You must create a .env file in the root of this project. This file is critical.
 
-Create the file: touch .env
+Create the file: 
+
+```bash
+touch .env
+```
 
 Add your secrets. Do NOT use quotes around the values.
 
-# .env file
+```env 
 
 # === GitHub ===
 # Required for scanning GitHub.
@@ -57,47 +59,49 @@ SMTP_HOST=sandbox.smtp.mailtrap.io
 SMTP_PORT=2525
 SMTP_USER=your-mailtrap-sandbox-username
 SMTP_PASS=your-mailtrap-sandbox-password
-SMTP_TO_EMAIL=your-test-email@example.com 
+SMTP_TO_EMAIL=your-test-email@example.com
+```
 
-
-Option 1: Run with Docker (Recommended)
+### Option 1: Run with Docker (Recommended)
 
 This is the easiest and most reliable way to run the project. It builds the scanner inside a container and securely injects your .env file.
 
-1. Build the image:
+#### 1. Build the image:
 
+``` bash
 docker build -t stackguard .
+```
 
+##### 2. Run the container:
 
-2. Run the container:
-
+``` bash
 docker run --rm --env-file .env stackguard
+```
 
-
-Option 2: Run Locally (For Development)
+### Option 2: Run Locally (For Development)
 
 This requires Go 1.24+ to be installed on your machine.
 
-1. Install dependencies:
+#### 1. Install dependencies:
 (If you haven't, initialize the Go module first)
 
 # Run this once:
-# go mod init stackguard
-# go mod tidy
 
+```bash
+go mod init stackguard
+go mod tidy
+```
 
-2. Run the scanner:
+#### 2. Run the scanner:
 (The godotenv library will automatically load your .env file)
-
+```bash
 go run .
+```
 
+## Demo & Example Alerts
 
-Demo & Example Alerts
-
-Example Terminal Output
-
-The scanner will log its progress, including any alerts it sends.
-
+### Example Terminal Output
+```bash
 $ docker run --rm --env-file .env stackguard
 Loaded environment variables from .env file
 Successfully loaded 3 tokens.
@@ -129,6 +133,13 @@ Successfully sent alert for AWSKey to Email (Mailtrap).
 ... (more alerts) ...
 
 Scan complete.
+```
+
+Example Slack Alert
 
 
+Example Email Alert (Mailtrap)
 
+(Add your screenshot here)
+
+[IMAGE_OF_YOUR_MAILTRAP_INBOX.png]
