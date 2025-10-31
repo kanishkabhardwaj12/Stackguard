@@ -28,10 +28,6 @@ type Leak struct {
 	GeoMethod   string  `json:"geoMethod"`
 }
 
-// ### FIX 1 (A): GitHub Structs Corrected ###
-// The 'Owner' struct is now correctly placed *inside* the 'Repository' struct.
-// ---
-
 type GitHubSearchResponse struct {
 	TotalCount int    `json:"total_count"` // count of matches
 	Items      []Item `json:"items"`
@@ -41,13 +37,12 @@ type GitHubSearchResponse struct {
 type Item struct {
 	HTMLURL    string     `json:"html_url"` // link to the file
 	Repository Repository `json:"repository"`
-	// 'Owner' field removed from here
 }
 
 // Repository holds the repo details
 type Repository struct {
 	FullName string `json:"full_name"`
-	Owner    Owner  `json:"owner"` // 'Owner' field added here
+	Owner    Owner  `json:"owner"`
 }
 
 // Geolocation data
@@ -55,8 +50,6 @@ type Owner struct {
 	Login    string `json:"login"`
 	Location string `json:"location"` // user's profile location
 }
-
-// --- End of Fix 1 (A) ---
 
 type SlackMessage struct {
 	Text string `json:"text"`
@@ -142,15 +135,13 @@ func scanGithub(tokens []Token, githubToken string) []Leak {
 
 		if searchResult.TotalCount > 0 {
 			for _, item := range searchResult.Items {
-				// ### FIX 1 (B): GeoLocation Path Corrected ###
-				// Changed from 'item.Owner.Location' to 'item.Repository.Owner.Location'
 				leak := Leak{
 					TokenType:  token.Type,
 					SourceURL:  item.HTMLURL,
 					Snippet:    fmt.Sprintf("Found in repo: %s", item.Repository.FullName),
 					Confidence: 0.9,
 					// get the location from the user's profile
-					GeoLocation: item.Repository.Owner.Location, // <-- Corrected path
+					GeoLocation: item.Repository.Owner.Location,
 					GeoMethod:   "GitHub Profile",
 				}
 				// --- End of Fix 1 (B) ---
@@ -210,12 +201,11 @@ func sendEmailAlert(leak Leak, host, port, user, pass, toEmail string) {
 		leak.TokenType, leak.SourceURL, leak.Snippet, leak.GeoLocation, leak.GeoMethod,
 	)
 
-	// The full message combines headers and body
 	msg := []byte(
 		"To: " + toEmail + "\r\n" +
 			"From: " + from + "\r\n" +
 			"Subject: " + subject + "\r\n" +
-			"\r\n" + // Empty line separates headers from body
+			"\r\n" +
 			body + "\r\n",
 	)
 
@@ -232,12 +222,11 @@ func sendEmailAlert(leak Leak, host, port, user, pass, toEmail string) {
 
 func handleAlerts(leaks []Leak, config AppConfig) {
 	if len(leaks) == 0 {
-		return // No leaks, nothing to do
+		return
 	}
 
 	fmt.Printf("--- Handling %d Alerts ---\n", len(leaks))
 	for _, leak := range leaks {
-		// Print to console
 		fmt.Println("------------------------------")
 		fmt.Printf("Type:    %s\n", leak.TokenType)
 		fmt.Printf("Source:  %s\n", leak.SourceURL)
@@ -270,7 +259,6 @@ type AppConfig struct {
 }
 
 func main() {
-	// 1. Load Inventory (This part was correct)
 	fileBytes, err := os.ReadFile("inventory.json")
 	if err != nil {
 		log.Fatalf("Failed to read inventory.json: %v", err)
