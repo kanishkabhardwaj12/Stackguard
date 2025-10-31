@@ -9,8 +9,12 @@ import (
 	"net/http"
 	"net/smtp"
 	"os"
+	"regexp"
 	"strings"
 	"time"
+
+	"github.com/joho/godotenv"
+	whois "github.com/likexian/whois-go"
 )
 
 type Token struct {
@@ -37,22 +41,133 @@ type GitHubSearchResponse struct {
 type Item struct {
 	HTMLURL    string     `json:"html_url"` // link to the file
 	Repository Repository `json:"repository"`
+	Path       string     `json:"path"`
 }
 
-// Repository holds the repo details
 type Repository struct {
 	FullName string `json:"full_name"`
 	Owner    Owner  `json:"owner"`
 }
 
-// Geolocation data
 type Owner struct {
 	Login    string `json:"login"`
-	Location string `json:"location"` // user's profile location
+	Location string `json:"location"`
+}
+
+type gitHubCommitResponse []struct {
+	Commit struct {
+		Author struct {
+			Email string `json:"email"`
+		} `json:"author"`
+	} `json:"commit"`
 }
 
 type SlackMessage struct {
 	Text string `json:"text"`
+}
+
+func getWhoisLocation(domain string) (string, string) {
+	result, err := whois.Whois(domain)
+	if err != nil {
+		log.Printf("WHOIS lookup failed for %s: %v", domain, err)
+		return "", ""
+	}
+
+	cityRegex := regexp.MustCompile(`(?i)Registrant City: (.*)`)
+	countryRegex := regexp.MustCompile(`(?i)Registrant Country: (.*)`)
+
+	cityMatch := cityRegex.FindStringSubmatch(result)
+	countryMatch := countryRegex.FindStringSubmatch(result)
+
+	var location string
+	if len(cityMatch) > 1 {
+		location = strings.TrimSpace(cityMatch[1])
+	}
+	if len(countryMatch) > 1 {
+		country := strings.TrimSpace(countryMatch[1])
+		if location != "" {
+			location = location + ", " + country
+		} else {
+			location = country
+		}
+	}
+
+	if location != "" {
+		location = strings.ReplaceAll(location, "\r", "")
+		return location, "WHOIS Lookup"
+	}
+
+	return "", ""
+}
+
+func getCommitInfo(item Item, client *http.Client, githubToken string) (string, string) {
+
+	// A blocklist of generic email domains
+	genericDomains := map[string]bool{
+		"gmail.com":                true,
+		"hotmail.com":              true,
+		"outlook.com":              true,
+		"yahoo.com":                true,
+		"aol.com":                  true,
+		"icloud.com":               true,
+		"protonmail.com":           true,
+		"users.noreply.github.com": true,
+	}
+
+	url := fmt.Sprintf("https://api.github.com/repos/%s/commits?path=%s&per_page=1",
+		item.Repository.FullName,
+		item.Path,
+	)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		log.Printf("Error creating commit request: %v", err)
+		return "", ""
+	}
+	req.Header.Add("Authorization", "Bearer "+githubToken)
+	req.Header.Add("Accept", "application/vnd.github.v3+json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("Error making commit request: %v", err)
+		return "", ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("Error: Commit API returned status: %s", resp.Status)
+		return "", ""
+	}
+
+	var commitData gitHubCommitResponse
+	err = json.NewDecoder(resp.Body).Decode(&commitData)
+	if err != nil {
+		log.Printf("Error parsing commit JSON: %v", err)
+		return "", ""
+	}
+
+	if len(commitData) == 0 || commitData[0].Commit.Author.Email == "" {
+		return "", ""
+	}
+
+	email := commitData[0].Commit.Author.Email
+	parts := strings.Split(email, "@")
+
+	if len(parts) != 2 {
+		return "", ""
+	}
+	domain := parts[1]
+
+	if genericDomains[domain] {
+		return "", ""
+	}
+
+	location, method := getWhoisLocation(domain)
+	if location != "" {
+		return location, method
+	}
+
+	return domain, "Committer Email Domain"
 }
 
 func scanLocalFile(filePath string, tokens []Token) []Leak {
@@ -69,14 +184,14 @@ func scanLocalFile(filePath string, tokens []Token) []Leak {
 	lineNumber := 1
 
 	for scanner.Scan() {
-		line := scanner.Text() //get the current line as string
+		line := scanner.Text()
 		for _, token := range tokens {
 			if strings.Contains(line, token.Value) {
 				leak := Leak{
 					TokenType:  token.Type,
 					SourceURL:  fmt.Sprintf("%s (line %d)", filePath, lineNumber),
 					Snippet:    strings.TrimSpace(line),
-					Confidence: 0.9, // cant say with 100% surity because this match could be a placeholder
+					Confidence: 0.9,
 				}
 				foundLeaks = append(foundLeaks, leak)
 			}
@@ -100,31 +215,26 @@ func scanGithub(tokens []Token, githubToken string) []Leak {
 
 	for _, token := range tokens {
 		fmt.Printf("Scanning GitHub for token: %s...\n", token.Type)
-		// send a request to search for each token
 		url := fmt.Sprintf("https://api.github.com/search/code?q=\"%s\"", token.Value)
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			log.Printf("Error creating request: %v", err)
 			continue
 		}
-		// add headers
 		req.Header.Add("Authorization", "Bearer "+githubToken)
 		req.Header.Add("Accept", "application/vnd.github.v3+json")
 
-		// make request
 		resp, err := client.Do(req)
 		if err != nil {
 			log.Printf("Error making request: %v", err)
 			continue
 		}
 
-		// check bad response
 		if resp.StatusCode != http.StatusOK {
 			log.Printf("Error: Github API returned status: %s", resp.Status)
 			continue
 		}
 
-		// decode response
 		var searchResult GitHubSearchResponse
 		err = json.NewDecoder(resp.Body).Decode(&searchResult)
 		resp.Body.Close()
@@ -135,16 +245,27 @@ func scanGithub(tokens []Token, githubToken string) []Leak {
 
 		if searchResult.TotalCount > 0 {
 			for _, item := range searchResult.Items {
-				leak := Leak{
-					TokenType:  token.Type,
-					SourceURL:  item.HTMLURL,
-					Snippet:    fmt.Sprintf("Found in repo: %s", item.Repository.FullName),
-					Confidence: 0.9,
-					// get the location from the user's profile
-					GeoLocation: item.Repository.Owner.Location,
-					GeoMethod:   "GitHub Profile",
+
+				geoLocation, geoMethod := getCommitInfo(item, client, githubToken)
+
+				if geoLocation == "" || geoLocation == item.Repository.Owner.Location {
+					geoLocation = item.Repository.Owner.Location
+					geoMethod = "GitHub Profile"
 				}
-				// --- End of Fix 1 (B) ---
+
+				snippet := fmt.Sprintf("Found in repo: %s (File: %s)",
+					item.Repository.FullName,
+					item.Path,
+				)
+
+				leak := Leak{
+					TokenType:   token.Type,
+					SourceURL:   item.HTMLURL,
+					Snippet:     snippet,
+					Confidence:  0.9,
+					GeoLocation: geoLocation,
+					GeoMethod:   geoMethod,
+				}
 				foundLeaks = append(foundLeaks, leak)
 			}
 		}
@@ -189,7 +310,7 @@ func sendSlackAlert(leak Leak, webhookURL string) {
 func sendEmailAlert(leak Leak, host, port, user, pass, toEmail string) {
 	auth := smtp.PlainAuth("", user, pass, host)
 
-	from := "kanishka@mailsystem.com"
+	from := "stackguard@mycompany.com"
 	subject := fmt.Sprintf("CRITICAL: Leak Detected (%s)", leak.TokenType)
 	body := fmt.Sprintf(
 		"A secret leak has been detected:\n\n"+
@@ -209,7 +330,6 @@ func sendEmailAlert(leak Leak, host, port, user, pass, toEmail string) {
 			body + "\r\n",
 	)
 
-	// Send the email
 	addr := host + ":" + port
 	err := smtp.SendMail(addr, auth, from, []string{toEmail}, msg)
 	if err != nil {
@@ -221,7 +341,7 @@ func sendEmailAlert(leak Leak, host, port, user, pass, toEmail string) {
 }
 
 func handleAlerts(leaks []Leak, config AppConfig) {
-	if len(leaks) == 0 {
+	if len(leaks) == .0 {
 		return
 	}
 
@@ -236,12 +356,10 @@ func handleAlerts(leaks []Leak, config AppConfig) {
 		}
 		fmt.Println("------------------------------")
 
-		// Send to Slack
 		if config.SlackWebhookURL != "" {
 			sendSlackAlert(leak, config.SlackWebhookURL)
 		}
 
-		// Send to Email
 		if config.SMTPHost != "" {
 			sendEmailAlert(leak, config.SMTPHost, config.SMTPPort, config.SMTPUser, config.SMTPPass, config.SMTPToEmail)
 		}
@@ -259,12 +377,16 @@ type AppConfig struct {
 }
 
 func main() {
+	if err := godotenv.Load(); err == nil {
+		fmt.Println("Loaded environment variables from .env file")
+	}
+
 	fileBytes, err := os.ReadFile("inventory.json")
 	if err != nil {
 		log.Fatalf("Failed to read inventory.json: %v", err)
 	}
 
-	var tokens []Token // to store the list of tokens from inventory
+	var tokens []Token
 
 	err = json.Unmarshal(fileBytes, &tokens)
 	if err != nil {
@@ -292,24 +414,20 @@ func main() {
 		log.Println("Warning: SMTP_HOST not set. Email alerts are disabled.")
 	}
 
-	// Run Local Scan
 	fmt.Println("\n--- Starting Local Scan ---")
 	localLeaks := scanLocalFile("sample_leak.txt", tokens)
 	if len(localLeaks) == 0 {
 		fmt.Println("No leaks found in local scan. Good!")
 	}
 
-	// Send local leaks to the alerting system
 	handleAlerts(localLeaks, config)
 
-	// Run GitHub Scan
 	fmt.Println("\nStarting GitHub Scan: ")
 	githubLeaks := scanGithub(tokens, config.GithubToken)
 	if len(githubLeaks) == 0 {
 		fmt.Println("No leaks found in GitHub scan. Good!")
 	}
 
-	// Send GitHub leaks to the alerting system
 	handleAlerts(githubLeaks, config)
 
 	fmt.Println("\nScan complete.")
