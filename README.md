@@ -134,12 +134,10 @@ Successfully sent alert for AWSKey to Email (Mailtrap).
 
 Scan complete.
 ```
-<<<<<<< HEAD
 
 ### Slack Alert
 ![Slack Alert](slackAlert.jpeg)
 
 ### Email (Mailtrap) Alert
 ![Mailtrap Alert](mailAlert.png)
-=======
->>>>>>> 0a591ba743c0df284f37197bc993e516c4113996
+
