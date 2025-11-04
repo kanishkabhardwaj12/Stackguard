@@ -139,5 +139,5 @@ Scan complete.
 ![Slack Alert](slackAlert.jpeg)
 
 ### Email (Mailtrap) Alert
-![Mailtrap Alert](mailAlert.png)
+![Mailtrap Alert](mailAlert.jpeg)
 
