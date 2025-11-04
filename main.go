@@ -341,7 +341,7 @@ func sendEmailAlert(leak Leak, host, port, user, pass, toEmail string) {
 }
 
 func handleAlerts(leaks []Leak, config AppConfig) {
-	if len(leaks) == .0 {
+	if len(leaks) == 0 {
 		return
 	}
 
